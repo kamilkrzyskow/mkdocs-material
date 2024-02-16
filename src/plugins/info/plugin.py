@@ -25,13 +25,14 @@ import platform
 import requests
 import sys
 
+import yaml
 from colorama import Fore, Style
 from importlib.metadata import distributions, version
 from io import BytesIO
 from markdown.extensions.toc import slugify
 from mkdocs.plugins import BasePlugin, event_priority
 from mkdocs.structure.files import get_files
-from mkdocs.utils import get_theme_dir
+from mkdocs.utils import get_theme_dir, get_yaml_loader
 from zipfile import ZipFile, ZIP_DEFLATED
 
 from .config import InfoConfig
@@ -112,12 +113,21 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         example, _ = os.path.splitext(example)
         example = "-".join([present, slugify(example, "-")])
 
+        # Load the current MkDocs config(s) to get access to INHERIT
+        loaded_config = _yaml_load(config.config_file_path)
+        if not isinstance(loaded_config, list):
+            loaded_config = [loaded_config]
+
         # Create self-contained example from project
         files: list[str] = []
         with ZipFile(archive, "a", ZIP_DEFLATED, False) as f:
             for path in ["mkdocs.yml", "requirements.txt"]:
                 if os.path.isfile(path):
                     f.write(path, os.path.join(example, path))
+
+            for cfg in filter(lambda x: "INHERIT" in x, loaded_config):
+                path = os.path.relpath(cfg["INHERIT"], os.path.curdir)
+                f.write(path, os.path.join(example, path))
 
             # Append all files visible to MkDocs
             for file in get_files(config):
@@ -236,6 +246,33 @@ def _size(value, factor = 1):
         if abs(value) < 1000.0:
             return f"{color}{value:3.1f} {unit}"
         value /= 1000.0
+
+# Custom YAML loader - required to handle the parent INHERIT config.
+# It converts the INHERIT path to absolute as a side effect.
+# Returns the loaded config, or a list of all loaded configs.
+def _yaml_load(source_path: str):
+
+    with open(source_path, "r", encoding="utf-8-sig") as file:
+        source = file.read()
+
+    try:
+        result = yaml.load(source, Loader=get_yaml_loader()) or {}
+    except yaml.YAMLError:
+        result = {}
+
+    if "INHERIT" in result:
+        relpath = result.get('INHERIT')
+        abspath = os.path.normpath(os.path.join(os.path.dirname(source_path), relpath))
+        if os.path.exists(abspath):
+            result["INHERIT"] = abspath
+            log.debug(f"Loading inherited configuration file: {abspath}")
+            parent = _yaml_load(abspath)
+            if isinstance(parent, list):
+                result = [result, *parent]
+            elif isinstance(parent, dict):
+                result = [result, parent]
+
+    return result if result else {}
 
 # -----------------------------------------------------------------------------
 # Data
