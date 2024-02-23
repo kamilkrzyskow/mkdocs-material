@@ -30,6 +30,8 @@ class InfoConfig(Config):
     enabled = Type(bool, default = True)
     enabled_on_serve = Type(bool, default = False)
 
+    root_dir = Type(str, default = "")
+
     # Settings for archive
     archive = Type(bool, default = True)
     archive_stop_on_violation = Type(bool, default = True)

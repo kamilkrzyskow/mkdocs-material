@@ -70,6 +70,17 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         if not self.config.enabled_on_serve and self.is_serve:
             return
 
+        # If the current working directory isn't a parent of the config file
+        # directory then the plugin will not be able to see all the files
+        # inside the project. Force the user to run the MkDocs from
+        # the correct directory.
+        config_dir = os.path.dirname(config.config_file_path)
+        if not self.config.root_dir and not config_dir.startswith(os.getcwd()):
+            log.error(f"Please run `mkdocs build` from the actual project root")
+            self._help_on_bad_cwd(config_dir)
+        elif self.config.root_dir:
+            self._change_cwd(config_dir)
+
         # Resolve latest version
         url = "https://github.com/squidfunk/mkdocs-material/releases/latest"
         res = requests.get(url, allow_redirects = False)
@@ -231,6 +242,38 @@ class InfoPlugin(BasePlugin[InfoConfig]):
 
         # Exit, unless explicitly told not to
         if self.config.archive_stop_on_violation:
+            sys.exit(1)
+
+    # Print help on bad execution directory and exit
+    def _help_on_bad_cwd(self, config_dir: str):
+        print(Fore.RED)
+        print("  The current working directory:")
+        print(f"    {os.getcwd()}")
+        print("  is not a parent of the config file directory:")
+        print(f"    {config_dir}")
+        print(Style.NORMAL)
+        print("  To assure that all project files are found")
+        print("  please run the `mkdocs build` command in the actual")
+        print("  root directory of the project.\n")
+        print("  You can also set the plugin config option `root_dir`")
+        print("  with a relative path to the actual root directory.")
+        print(Style.RESET_ALL)
+
+        # Exit, unless explicitly told not to
+        if self.config.archive_stop_on_violation:
+            sys.exit(1)
+
+    # Change current working directory based on user config
+    def _change_cwd(self, config_dir: str):
+        if os.path.isabs(self.config.root_dir):
+            abspath = self.config.root_dir
+        else:
+            abspath = os.path.normpath(os.path.join(config_dir, self.config.root_dir))
+
+        if os.path.exists(abspath):
+            os.chdir(self.config.root_dir)
+        else:
+            log.error(f"`root_dir`: {self.config.root_dir} doesn't exist")
             sys.exit(1)
 
 # -----------------------------------------------------------------------------
