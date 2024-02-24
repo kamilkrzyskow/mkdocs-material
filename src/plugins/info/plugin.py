@@ -75,11 +75,9 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         # inside the project. Force the user to run the MkDocs from
         # the correct directory.
         config_dir = os.path.dirname(config.config_file_path)
-        if not self.config.root_dir and not config_dir.startswith(os.getcwd()):
+        if not config_dir.startswith(os.getcwd()):
             log.error(f"Please run `mkdocs build` from the actual project root")
             self._help_on_bad_cwd(config_dir)
-        elif self.config.root_dir:
-            self._change_cwd(config_dir)
 
         # Validate markdown_extensions like Snippets.
         # Read known path config options and validate that they point to
@@ -293,8 +291,6 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         print("  To assure that all project files are found")
         print("  please run the `mkdocs build` command in the actual")
         print("  root directory of the project.\n")
-        print("  You can also set the plugin config option `root_dir`")
-        print("  with a relative path to the actual root directory.")
         print(Style.RESET_ALL)
 
         # Exit, unless explicitly told not to
@@ -353,19 +349,6 @@ class InfoPlugin(BasePlugin[InfoConfig]):
 
         # Exit, unless explicitly told not to
         if self.config.archive_stop_on_violation:
-            sys.exit(1)
-
-    # Change current working directory based on user config
-    def _change_cwd(self, config_dir: str):
-        if os.path.isabs(self.config.root_dir):
-            abspath = self.config.root_dir
-        else:
-            abspath = os.path.normpath(os.path.join(config_dir, self.config.root_dir))
-
-        if os.path.exists(abspath):
-            os.chdir(self.config.root_dir)
-        else:
-            log.error(f"`root_dir`: {self.config.root_dir} doesn't exist")
             sys.exit(1)
 
 # -----------------------------------------------------------------------------
