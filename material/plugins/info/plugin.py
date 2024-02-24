@@ -81,6 +81,27 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         elif self.config.root_dir:
             self._change_cwd(config_dir)
 
+        # Validate markdown_extensions like Snippets.
+        # Read known path config options and validate that they point to
+        # children of the current working directory.
+        known_path_options = ["base_path", "auto_append", "relative_path"]
+        invalid_extensions = []
+        for option in known_path_options:
+            for ext, cfg in filter(lambda x: option in x[1], config.mdx_configs.items()):
+                paths = cfg[option]
+                if not isinstance(paths, list):
+                    paths = [paths]
+                for path in paths:
+                    abspath = os.path.abspath(path)
+                    if not abspath.startswith(os.getcwd()):
+                        invalid_extensions.append((ext, option, abspath))
+                    elif not os.path.exists(abspath):
+                        invalid_extensions.append((ext, option, abspath))
+
+        if invalid_extensions:
+            log.error(f"One or more `markdown_extension` paths are invalid")
+            self._help_on_bad_extensions(invalid_extensions)
+
         # Resolve latest version
         url = "https://github.com/squidfunk/mkdocs-material/releases/latest"
         res = requests.get(url, allow_redirects = False)
@@ -257,6 +278,33 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         print("  root directory of the project.\n")
         print("  You can also set the plugin config option `root_dir`")
         print("  with a relative path to the actual root directory.")
+        print(Style.RESET_ALL)
+
+        # Exit, unless explicitly told not to
+        if self.config.archive_stop_on_violation:
+            sys.exit(1)
+
+    # Print help on bad markdown extensions and exit
+    def _help_on_bad_extensions(self, bad_extension):
+        existing = list(filter(lambda x: os.path.exists(x[-1]), bad_extension))
+        not_existing = list(filter(lambda x: not os.path.exists(x[-1]), bad_extension))
+        if len(existing) > 0:
+            print(Fore.RED)
+            print("  The current working (root) directory:")
+            print(f"    {os.getcwd()}")
+            print("  is not a parent of the following paths:")
+            print(Style.NORMAL)
+            for snippet in existing:
+                print(f"    {':'.join(snippet)}\n")
+        if len(not_existing) > 0:
+            print(Fore.RED)
+            print("  The following files don't exist:")
+            print(Style.NORMAL)
+            for snippet in not_existing:
+                print(f"    {':'.join(snippet)}\n")
+        print("  To assure that all project files are found")
+        print("  please adjust your config or file structure and")
+        print("  put everything within the root directory of the project.")
         print(Style.RESET_ALL)
 
         # Exit, unless explicitly told not to
