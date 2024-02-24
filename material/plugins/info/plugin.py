@@ -102,6 +102,28 @@ class InfoPlugin(BasePlugin[InfoConfig]):
             log.error(f"One or more `markdown_extension` paths are invalid")
             self._help_on_bad_extensions(invalid_extensions)
 
+        # Load the current MkDocs config(s) to get access to INHERIT
+        loaded_config = _yaml_load(config.config_file_path)
+        if not isinstance(loaded_config, list):
+            loaded_config = [loaded_config]
+
+        # Validate different paths to assure that they're within the
+        # current working directory.
+        paths_to_validate = [
+            config.docs_dir,
+            *[cfg["INHERIT"] for cfg in filter(lambda x: "INHERIT" in x, loaded_config)]
+        ]
+        invalid_paths = []
+        for path in paths_to_validate:
+            if not path.startswith(os.getcwd()):
+                invalid_paths.append(path)
+            elif not os.path.exists(path):
+                invalid_paths.append(path)
+
+        if invalid_paths:
+            log.error(f"One or more paths are invalid")
+            self._help_on_bad_paths(invalid_paths)
+
         # Resolve latest version
         url = "https://github.com/squidfunk/mkdocs-material/releases/latest"
         res = requests.get(url, allow_redirects = False)
@@ -144,11 +166,6 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         example = input("\nPlease name your bug report (2-4 words): ")
         example, _ = os.path.splitext(example)
         example = "-".join([present, slugify(example, "-")])
-
-        # Load the current MkDocs config(s) to get access to INHERIT
-        loaded_config = _yaml_load(config.config_file_path)
-        if not isinstance(loaded_config, list):
-            loaded_config = [loaded_config]
 
         # Create self-contained example from project
         files: list[str] = []
@@ -302,6 +319,33 @@ class InfoPlugin(BasePlugin[InfoConfig]):
             print(Style.NORMAL)
             for snippet in not_existing:
                 print(f"    {':'.join(snippet)}\n")
+        print("  To assure that all project files are found")
+        print("  please adjust your config or file structure and")
+        print("  put everything within the root directory of the project.")
+        print(Style.RESET_ALL)
+
+        # Exit, unless explicitly told not to
+        if self.config.archive_stop_on_violation:
+            sys.exit(1)
+
+    # Print help on bad paths and exit
+    def _help_on_bad_paths(self, bad_paths):
+        existing = list(filter(lambda x: os.path.exists(x), bad_paths))
+        not_existing = list(filter(lambda x: not os.path.exists(x), bad_paths))
+        if len(existing) > 0:
+            print(Fore.RED)
+            print("  The current working (root) directory:")
+            print(f"    {os.getcwd()}")
+            print("  is not a parent of the following paths:")
+            print(Style.NORMAL)
+            for path in existing:
+                print(f"    {path}\n")
+        if len(not_existing) > 0:
+            print(Fore.RED)
+            print("  The following files don't exist:")
+            print(Style.NORMAL)
+            for path in not_existing:
+                print(f"    {path}\n")
         print("  To assure that all project files are found")
         print("  please adjust your config or file structure and")
         print("  put everything within the root directory of the project.")
