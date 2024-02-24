@@ -1,0 +1,29 @@
+# Custom .gitignore-like file
+# The difference is that those are https://docs.python.org/3/library/fnmatch.html
+# patterns, that will be compared against directory and file names case-sensitively.
+
+# - Nested paths aren't supported
+# - Directory name must end with a /
+
+# ---
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# Environments
+.env/
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# macOS
+
+.DS_Store
+
+# Generated files
+
+*.zip

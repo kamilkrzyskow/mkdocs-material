@@ -18,11 +18,13 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+import fnmatch
 import json
 import logging
 import os
 import platform
 import requests
+import site
 import sys
 
 import yaml
@@ -49,6 +51,9 @@ class InfoPlugin(BasePlugin[InfoConfig]):
 
         # Initialize incremental builds
         self.is_serve = False
+
+        # Initialize empty members
+        self.exclusion_patterns = []
 
     # Determine whether we're serving the site
     def on_startup(self, *, command, dirty):
@@ -164,11 +169,22 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         example, _ = os.path.splitext(example)
         example = "-".join([present, slugify(example, "-")])
 
+        # Load exclusion patterns
+        self.exclusion_patterns = _get_exclusion_patterns()
+        self.exclusion_patterns.append(os.path.basename(config.site_dir) + "/")
+
         # Create self-contained example from project
         files: list[str] = []
         with ZipFile(archive, "a", ZIP_DEFLATED, False) as f:
-            for currentpath, _, files in os.walk(os.getcwd()):
-                for file in files:
+            for currentpath, folders, filenames in os.walk(os.getcwd()):
+                # Prune the folder in-place to prevent
+                # scanning excluded folders
+                for folder in list(folders):
+                    if self._is_excluded(currentpath, folder, isdir = True):
+                        folders.remove(folder)
+                for file in filenames:
+                    if self._is_excluded(currentpath, file):
+                        continue
                     path = os.path.relpath(os.path.join(currentpath, str(file)), os.path.curdir)
                     f.write(path, os.path.join(example, path))
 
@@ -342,6 +358,27 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         if self.config.archive_stop_on_violation:
             sys.exit(1)
 
+    # Exclude files which we don't want in our zip file
+    def _is_excluded(self, currentpath: str, name: str, *, isdir: bool = False) -> bool:
+
+        # Exclude the site-packages directory
+        for path in site.getsitepackages():
+            if currentpath.startswith(path):
+                log.debug(f"Excluded Case #1: {path}")
+                return True
+
+        if isdir:
+            name = name + "/"
+
+        # Adapted from
+        # https://github.com/apenwarr/mkdocs-exclude/blob/master/mkdocs_exclude/plugin.py
+        for pattern in self.exclusion_patterns:
+            if fnmatch.fnmatchcase(name, pattern):
+                log.debug(f"Excluded Case #2 ('{pattern}', {name}): {os.path.join(currentpath, name)}")
+                return True
+
+        return False
+
 # -----------------------------------------------------------------------------
 # Helper functions
 # -----------------------------------------------------------------------------
@@ -382,6 +419,16 @@ def _yaml_load(source_path: str):
                 result = [result, parent]
 
     return result if result else {}
+
+# Load info.gitignore, ignore and empty lines or # comments
+def _get_exclusion_patterns(path: str = None):
+    if path is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "info.gitignore")
+
+    with open(path, encoding = "utf-8") as file:
+        lines = file.readlines()
+
+    return [line.strip() for line in lines if line.strip() and not line.strip().startswith("#")]
 
 # -----------------------------------------------------------------------------
 # Data
