@@ -74,57 +74,25 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         if not self.config.enabled_on_serve and self.is_serve:
             return
 
-        # If the current working directory isn't a parent of the config file
-        # directory then the plugin will not be able to see all the files
-        # inside the project. Force the user to run the MkDocs from
-        # the correct directory.
-        config_dir = os.path.dirname(config.config_file_path)
-        if not config_dir.startswith(os.getcwd()):
-            log.error(f"Please run `mkdocs build` from the actual project root")
-            self._help_on_bad_cwd(config_dir)
-
-        # Validate markdown_extensions like Snippets.
-        # Read known path config options and validate that they point to
-        # children of the current working directory.
-        known_path_options = ["base_path", "auto_append", "relative_path"]
-        invalid_extensions = []
-        for option in known_path_options:
-            for ext, cfg in filter(lambda x: option in x[1], config.mdx_configs.items()):
-                paths = cfg[option]
-                if not isinstance(paths, list):
-                    paths = [paths]
-                for path in paths:
-                    abspath = os.path.abspath(path)
-                    if not abspath.startswith(os.getcwd()):
-                        invalid_extensions.append((ext, option, abspath))
-                    elif not os.path.exists(abspath):
-                        invalid_extensions.append((ext, option, abspath))
-
-        if invalid_extensions:
-            log.error(f"One or more `markdown_extension` paths are invalid")
-            self._help_on_bad_extensions(invalid_extensions)
-
         # Load the current MkDocs config(s) to get access to INHERIT
         loaded_config = _yaml_load(config.config_file_path)
         if not isinstance(loaded_config, list):
             loaded_config = [loaded_config]
 
-        # Validate different paths to assure that they're within the
-        # current working directory.
+        # Validate different MkDocs paths to assure that
+        # they're children of the current working directory.
         paths_to_validate = [
+            config.config_file_path,
             config.docs_dir,
-            *[cfg["INHERIT"] for cfg in filter(lambda x: "INHERIT" in x, loaded_config)]
+            *[cfg.get("INHERIT", "") for cfg in loaded_config]
         ]
-        invalid_paths = []
-        for path in paths_to_validate:
-            if not path.startswith(os.getcwd()):
-                invalid_paths.append(path)
-            elif not os.path.exists(path):
-                invalid_paths.append(path)
+        for path in reversed(paths_to_validate):
+            if not path or path.startswith(os.getcwd()):
+                paths_to_validate.remove(path)
 
-        if invalid_paths:
-            log.error(f"One or more paths are invalid")
-            self._help_on_bad_paths(invalid_paths)
+        if paths_to_validate:
+            log.error(f"One or more paths aren't children of root")
+            self._help_on_not_in_cwd(paths_to_validate)
 
         # Resolve latest version
         url = "https://github.com/squidfunk/mkdocs-material/releases/latest"
@@ -287,71 +255,20 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         if self.config.archive_stop_on_violation:
             sys.exit(1)
 
-    # Print help on bad execution directory and exit
-    def _help_on_bad_cwd(self, config_dir: str):
+    # Print help on not in current working directory and exit
+    def _help_on_not_in_cwd(self, bad_paths):
         print(Fore.RED)
-        print("  The current working directory:")
-        print(f"    {os.getcwd()}")
-        print("  is not a parent of the config file directory:")
-        print(f"    {config_dir}")
+        print("  The current working (root) directory:\n")
+        print(f"    {os.getcwd()}\n")
+        print("  is not a parent of the following paths:")
         print(Style.NORMAL)
-        print("  To assure that all project files are found")
-        print("  please run the `mkdocs build` command in the actual")
-        print("  root directory of the project.\n")
-        print(Style.RESET_ALL)
-
-        # Exit, unless explicitly told not to
-        if self.config.archive_stop_on_violation:
-            sys.exit(1)
-
-    # Print help on bad markdown extensions and exit
-    def _help_on_bad_extensions(self, bad_extension):
-        existing = list(filter(lambda x: os.path.exists(x[-1]), bad_extension))
-        not_existing = list(filter(lambda x: not os.path.exists(x[-1]), bad_extension))
-        if len(existing) > 0:
-            print(Fore.RED)
-            print("  The current working (root) directory:")
-            print(f"    {os.getcwd()}")
-            print("  is not a parent of the following paths:")
-            print(Style.NORMAL)
-            for snippet in existing:
-                print(f"    {':'.join(snippet)}\n")
-        if len(not_existing) > 0:
-            print(Fore.RED)
-            print("  The following files don't exist:")
-            print(Style.NORMAL)
-            for snippet in not_existing:
-                print(f"    {':'.join(snippet)}\n")
+        for path in bad_paths:
+            print(f"    {path}\n")
         print("  To assure that all project files are found")
         print("  please adjust your config or file structure and")
-        print("  put everything within the root directory of the project.")
-        print(Style.RESET_ALL)
-
-        # Exit, unless explicitly told not to
-        if self.config.archive_stop_on_violation:
-            sys.exit(1)
-
-    # Print help on bad paths and exit
-    def _help_on_bad_paths(self, bad_paths):
-        existing = list(filter(lambda x: os.path.exists(x), bad_paths))
-        not_existing = list(filter(lambda x: not os.path.exists(x), bad_paths))
-        if len(existing) > 0:
-            print(Fore.RED)
-            print("  The current working (root) directory:")
-            print(f"    {os.getcwd()}")
-            print("  is not a parent of the following paths:")
-            print(Style.NORMAL)
-            for path in existing:
-                print(f"    {path}\n")
-        if len(not_existing) > 0:
-            print(Fore.RED)
-            print("  The following files don't exist:")
-            print(Style.NORMAL)
-            for path in not_existing:
-                print(f"    {path}\n")
-        print("  To assure that all project files are found")
-        print("  please adjust your config or file structure and")
-        print("  put everything within the root directory of the project.")
+        print("  put everything within the root directory of the project.\n")
+        print("  Please also make sure `mkdocs build` is run in")
+        print("  the actual root directory of the project.")
         print(Style.RESET_ALL)
 
         # Exit, unless explicitly told not to
