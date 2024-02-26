@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import platform
+import posixpath
 import requests
 import site
 import sys
@@ -139,21 +140,35 @@ class InfoPlugin(BasePlugin[InfoConfig]):
 
         # Load exclusion patterns
         self.exclusion_patterns = _get_exclusion_patterns()
-        self.exclusion_patterns.append(os.path.basename(config.site_dir) + "/")
+
+        # Exclude the site_dir at project root
+        if config.site_dir.startswith(os.getcwd()):
+            path = _remove_cwd_as_posix(config.site_dir) + "/"
+            self.exclusion_patterns.append(path)
+
+        # Exclude the site-packages directory
+        for path in site.getsitepackages():
+            if path.startswith(os.getcwd()):
+                path = _remove_cwd_as_posix(path) + "/"
+                self.exclusion_patterns.append(path)
 
         # Create self-contained example from project
         files: list[str] = []
         with ZipFile(archive, "a", ZIP_DEFLATED, False) as f:
-            for currentpath, folders, filenames in os.walk(os.getcwd()):
+            for abs_currentpath, folders, filenames in os.walk(os.getcwd()):
                 # Prune the folder in-place to prevent
                 # scanning excluded folders
+                currentpath = _remove_cwd_as_posix(abs_currentpath)
                 for folder in list(folders):
-                    if self._is_excluded(currentpath, folder, isdir = True):
+                    path = posixpath.join(currentpath, folder) + "/"
+                    if self._is_excluded(path):
                         folders.remove(folder)
                 for file in filenames:
-                    if self._is_excluded(currentpath, file):
+                    path = posixpath.join(currentpath, file)
+                    if self._is_excluded(path):
                         continue
-                    path = os.path.relpath(os.path.join(currentpath, str(file)), os.path.curdir)
+                    path = os.path.join(abs_currentpath, file)
+                    path = os.path.relpath(path, os.path.curdir)
                     f.write(path, os.path.join(example, path))
 
             # Add information on installed packages
@@ -276,22 +291,10 @@ class InfoPlugin(BasePlugin[InfoConfig]):
             sys.exit(1)
 
     # Exclude files which we don't want in our zip file
-    def _is_excluded(self, currentpath: str, name: str, *, isdir: bool = False) -> bool:
-
-        # Exclude the site-packages directory
-        for path in site.getsitepackages():
-            if currentpath.startswith(path):
-                log.debug(f"Excluded Case #1: {path}")
-                return True
-
-        if isdir:
-            name = name + "/"
-
-        # Adapted from
-        # https://github.com/apenwarr/mkdocs-exclude/blob/master/mkdocs_exclude/plugin.py
+    def _is_excluded(self, posix_path: str) -> bool:
         for pattern in self.exclusion_patterns:
-            if fnmatch.fnmatchcase(name, pattern):
-                log.debug(f"Excluded Case #2 ('{pattern}', {name}): {os.path.join(currentpath, name)}")
+            if fnmatch.fnmatchcase(posix_path, pattern):
+                log.debug(f"Excluded pattern '{pattern}': {posix_path}")
                 return True
 
         return False
@@ -337,15 +340,27 @@ def _yaml_load(source_path: str):
 
     return result if result else {}
 
-# Load info.gitignore, ignore and empty lines or # comments
+# Load info.gitignore, ignore any empty lines or # comments
 def _get_exclusion_patterns(path: str = None):
     if path is None:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "info.gitignore")
+        path = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(path, "info.gitignore")
 
     with open(path, encoding = "utf-8") as file:
-        lines = file.readlines()
+        lines = map(str.strip, file.readlines())
 
-    return [line.strip() for line in lines if line.strip() and not line.strip().startswith("#")]
+    return [line for line in lines if line and not line.startswith("#")]
+
+# For the pattern matching it is best to remove the CWD
+# prefix and keep only the relative root of the project.
+# Additionally, as the patterns are in POSIX format,
+# assure that the path is also in POSIX format.
+def _remove_cwd_as_posix(path: str):
+    return (
+        path
+        .replace(os.getcwd(), "", 1)
+        .replace(os.sep, "/")
+    ) or "/"
 
 # -----------------------------------------------------------------------------
 # Data

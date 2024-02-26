@@ -2,28 +2,31 @@
 # The difference is that those are https://docs.python.org/3/library/fnmatch.html
 # patterns, that will be compared against directory and file names case-sensitively.
 
-# - Nested paths aren't supported
-# - Directory name must end with a /
+# Basic rules:
+# - Directory names must end with a /
+# - To match a name in any directory add * at the start
+# - To match both directory and filenames create 2 patterns
+# Adding * at the start and end instead is dangerous
+# as it will match any subpath within the criteria.
+
+# Patterns for dynamic or custom paths like Virtual Environments (venv)
+# or build site directories are created during plugin runtime.
 
 # ---
 
 # Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
+*__pycache__/
 
-# Environments
-.env/
-.venv/
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+# Python hooks etc.
+
+*.py
 
 # macOS
 
-.DS_Store
+*.DS_Store
 
-# Generated files
+# Generated files and folders
 
 *.zip
+*.cache
+*.cache/
