@@ -18,8 +18,9 @@
 *__pycache__/
 
 # Python hooks etc.
+# Keep __init__.py for projects plugin
 
-*.py
+*[!__init__].py
 
 # macOS
 

@@ -19,6 +19,7 @@
 # IN THE SOFTWARE.
 
 import fnmatch
+import glob
 import json
 import logging
 import os
@@ -33,6 +34,7 @@ from colorama import Fore, Style
 from importlib.metadata import distributions, version
 from io import BytesIO
 from markdown.extensions.toc import slugify
+from mkdocs.config.defaults import MkDocsConfig
 from mkdocs.plugins import BasePlugin, event_priority
 from mkdocs.utils import get_theme_dir, get_yaml_loader
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -75,6 +77,16 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         if not self.config.enabled_on_serve and self.is_serve:
             return
 
+        # Support projects plugin
+        projects_plugin = config.plugins.get("material/projects")
+        if projects_plugin:
+            projects_dir = os.path.join(
+                os.path.dirname(config.config_file_path),
+                projects_plugin.config.projects_dir
+            )
+        else:
+            projects_dir = ""
+
         # Load the current MkDocs config(s) to get access to INHERIT
         loaded_config = _yaml_load(config.config_file_path)
         if not isinstance(loaded_config, list):
@@ -85,6 +97,7 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         paths_to_validate = [
             config.config_file_path,
             config.docs_dir,
+            projects_dir,
             *[cfg.get("INHERIT", "") for cfg in loaded_config]
         ]
         for path in reversed(paths_to_validate):
@@ -150,6 +163,18 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         for path in site.getsitepackages():
             if path.startswith(os.getcwd()):
                 path = _remove_cwd_as_posix(path) + "/"
+                self.exclusion_patterns.append(path)
+
+        # Exclude site_dir for projects
+        if projects_plugin:
+            for path in glob.iglob(
+                projects_plugin.config.projects_config_files,
+                root_dir=projects_dir,
+                recursive=True
+            ):
+                current_config_file = os.path.join(projects_dir, path)
+                project_config = _get_project_config(current_config_file)
+                path = _remove_cwd_as_posix(project_config.site_dir) + "/"
                 self.exclusion_patterns.append(path)
 
         # Create self-contained example from project
@@ -361,6 +386,17 @@ def _remove_cwd_as_posix(path: str):
         .replace(os.getcwd(), "", 1)
         .replace(os.sep, "/")
     ) or "/"
+
+# Get project configuration
+def _get_project_config(project_config_file: str):
+    with open(project_config_file, encoding="utf-8") as file:
+        config = MkDocsConfig(config_file_path=project_config_file)
+        config.load_file(file)
+
+        # MkDocs transforms site_dir to absolute path during validation
+        config.validate()
+
+        return config
 
 # -----------------------------------------------------------------------------
 # Data
