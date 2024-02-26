@@ -211,7 +211,8 @@ class InfoPlugin(BasePlugin[InfoConfig]):
                 json.dumps(
                     {
                         "system": platform.platform(),
-                        "python": platform.python_version()
+                        "python": platform.python_version(),
+                        "command": " ".join(sys.argv[1:])
                     },
                     default = str,
                     indent = 2
