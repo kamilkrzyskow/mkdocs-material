@@ -24,7 +24,6 @@ import json
 import logging
 import os
 import platform
-import posixpath
 import requests
 import site
 import sys
@@ -89,25 +88,25 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         # Support projects plugin
         projects_plugin = config.plugins.get("material/projects")
         if projects_plugin:
-            projects_dir = os.path.join(
+            abs_projects_dir = os.path.join(
                 os.path.dirname(config.config_file_path),
                 projects_plugin.config.projects_dir
             )
         else:
-            projects_dir = ""
+            abs_projects_dir = ""
 
         # Load the current MkDocs config(s) to get access to INHERIT
-        loaded_config = _yaml_load(config.config_file_path)
-        if not isinstance(loaded_config, list):
-            loaded_config = [loaded_config]
+        loaded_configs = _load_yaml(config.config_file_path)
+        if not isinstance(loaded_configs, list):
+            loaded_configs = [loaded_configs]
 
         # Validate different MkDocs paths to assure that
         # they're children of the current working directory.
         paths_to_validate = [
             config.config_file_path,
             config.docs_dir,
-            projects_dir,
-            *[cfg.get("INHERIT", "") for cfg in loaded_config]
+            abs_projects_dir,
+            *[cfg.get("INHERIT", "") for cfg in loaded_configs]
         ]
         for path in reversed(paths_to_validate):
             if not path or path.startswith(os.getcwd()):
@@ -161,47 +160,44 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         example = "-".join([present, slugify(example, "-")])
 
         # Load exclusion patterns
-        self.exclusion_patterns = _get_exclusion_patterns()
+        self.exclusion_patterns = _load_exclusion_patterns()
 
         # Exclude the site_dir at project root
         if config.site_dir.startswith(os.getcwd()):
-            path = _remove_cwd_as_posix(config.site_dir) + "/"
-            self.exclusion_patterns.append(path)
+            self.exclusion_patterns.append(_resolve_pattern(config.site_dir))
 
         # Exclude the site-packages directory
         for path in site.getsitepackages():
             if path.startswith(os.getcwd()):
-                path = _remove_cwd_as_posix(path) + "/"
-                self.exclusion_patterns.append(path)
+                self.exclusion_patterns.append(_resolve_pattern(path))
 
         # Exclude site_dir for projects
         if projects_plugin:
             for path in glob.iglob(
-                projects_plugin.config.projects_config_files,
-                root_dir=projects_dir,
-                recursive=True
+                pathname = projects_plugin.config.projects_config_files,
+                root_dir = abs_projects_dir,
+                recursive = True
             ):
-                current_config_file = os.path.join(projects_dir, path)
+                current_config_file = os.path.join(abs_projects_dir, path)
                 project_config = _get_project_config(current_config_file)
-                path = _remove_cwd_as_posix(project_config.site_dir) + "/"
-                self.exclusion_patterns.append(path)
+                pattern = _resolve_pattern(project_config.site_dir)
+                self.exclusion_patterns.append(pattern)
 
         # Create self-contained example from project
         files: list[str] = []
         with ZipFile(archive, "a", ZIP_DEFLATED, False) as f:
-            for abs_currentpath, folders, filenames in os.walk(os.getcwd()):
+            for abs_root, dirnames, filenames in os.walk(os.getcwd()):
                 # Prune the folder in-place to prevent
                 # scanning excluded folders
-                currentpath = _remove_cwd_as_posix(abs_currentpath)
-                for folder in list(folders):
-                    path = posixpath.join(currentpath, folder) + "/"
-                    if self._is_excluded(path):
-                        folders.remove(folder)
-                for file in filenames:
-                    path = posixpath.join(currentpath, file)
-                    if self._is_excluded(path):
+                for name in list(dirnames):
+                    pattern = _resolve_pattern(os.path.join(abs_root, name))
+                    if self._is_excluded(pattern):
+                        dirnames.remove(name)
+                for name in filenames:
+                    path = os.path.join(abs_root, name)
+                    pattern = _resolve_pattern(path)
+                    if self._is_excluded(pattern):
                         continue
-                    path = os.path.join(abs_currentpath, file)
                     path = os.path.relpath(path, os.path.curdir)
                     f.write(path, os.path.join(example, path))
 
@@ -356,13 +352,13 @@ def _size(value, factor = 1):
 # Custom YAML loader - required to handle the parent INHERIT config.
 # It converts the INHERIT path to absolute as a side effect.
 # Returns the loaded config, or a list of all loaded configs.
-def _yaml_load(source_path: str):
+def _load_yaml(source_path: str):
 
-    with open(source_path, "r", encoding="utf-8-sig") as file:
+    with open(source_path, "r", encoding = "utf-8-sig") as file:
         source = file.read()
 
     try:
-        result = yaml.load(source, Loader=get_yaml_loader()) or {}
+        result = yaml.load(source, Loader = get_yaml_loader()) or {}
     except yaml.YAMLError:
         result = {}
 
@@ -372,7 +368,7 @@ def _yaml_load(source_path: str):
         if os.path.exists(abspath):
             result["INHERIT"] = abspath
             log.debug(f"Loading inherited configuration file: {abspath}")
-            parent = _yaml_load(abspath)
+            parent = _load_yaml(abspath)
             if isinstance(parent, list):
                 result = [result, *parent]
             elif isinstance(parent, dict):
@@ -381,7 +377,7 @@ def _yaml_load(source_path: str):
     return result if result else {}
 
 # Load info.gitignore, ignore any empty lines or # comments
-def _get_exclusion_patterns(path: str = None):
+def _load_exclusion_patterns(path: str = None):
     if path is None:
         path = os.path.dirname(os.path.abspath(__file__))
         path = os.path.join(path, "info.gitignore")
@@ -392,20 +388,26 @@ def _get_exclusion_patterns(path: str = None):
     return [line for line in lines if line and not line.startswith("#")]
 
 # For the pattern matching it is best to remove the CWD
-# prefix and keep only the relative root of the project.
+# prefix and keep only the relative root of the reproduction.
 # Additionally, as the patterns are in POSIX format,
 # assure that the path is also in POSIX format.
-def _remove_cwd_as_posix(path: str):
-    return (
-        path
-        .replace(os.getcwd(), "", 1)
-        .replace(os.sep, "/")
-    ) or "/"
+# Side-effect: It appends "/" for directory patterns.
+def _resolve_pattern(abspath: str):
+    path = abspath.replace(os.getcwd(), "", 1).replace(os.sep, "/")
+
+    if not path:
+        return "/"
+
+    # Check abspath, as the file needs to exist
+    if not os.path.isfile(abspath):
+        return path + "/"
+
+    return path
 
 # Get project configuration
 def _get_project_config(project_config_file: str):
     with open(project_config_file, encoding="utf-8") as file:
-        config = MkDocsConfig(config_file_path=project_config_file)
+        config = MkDocsConfig(config_file_path = project_config_file)
         config.load_file(file)
 
         # MkDocs transforms site_dir to absolute path during validation
