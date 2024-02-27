@@ -3,9 +3,9 @@
 # patterns, that will be compared against directory and file names case-sensitively.
 
 # Basic rules:
-# - Directory names must end with a /
+# - To match a directory end the pattern with a /
 # - To match a name in any directory add * at the start
-# - To match both directory and filenames create 2 patterns
+# - To match both directory and filenames create 2 patterns like .cache below
 # Adding * at the start and end instead is dangerous
 # as it will match any subpath within the criteria.
 
@@ -16,11 +16,6 @@
 
 # Byte-compiled / optimized / DLL files
 *__pycache__/
-
-# Python hooks etc.
-# Keep __init__.py for projects plugin
-
-*[!__init__].py
 
 # macOS
 
