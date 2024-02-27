@@ -300,6 +300,11 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         print(Style.NORMAL)
         print("  - extra_css")
         print("  - extra_javascript")
+        print(Fore.YELLOW)
+        print("  If you're using customizations from the theme's documentation")
+        print("  and you want to report a bug specific to those customizations")
+        print("  then set the 'archive_stop_on_violation: false' option in the")
+        print("  info plugin config.")
         print(Style.RESET_ALL)
 
         # Exit, unless explicitly told not to
