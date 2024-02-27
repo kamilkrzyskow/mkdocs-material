@@ -77,6 +77,15 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         if not self.config.enabled_on_serve and self.is_serve:
             return
 
+        # Assure that config_file_path is absolute.
+        # If the --config-file option is used then the path is
+        # used as provided, so it is likely relative.
+        if not os.path.isabs(config.config_file_path):
+            config.config_file_path = os.path.normpath(os.path.join(
+                os.getcwd(),
+                config.config_file_path
+            ))
+
         # Support projects plugin
         projects_plugin = config.plugins.get("material/projects")
         if projects_plugin:
