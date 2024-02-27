@@ -187,16 +187,26 @@ class InfoPlugin(BasePlugin[InfoConfig]):
         files: list[str] = []
         with ZipFile(archive, "a", ZIP_DEFLATED, False) as f:
             for abs_root, dirnames, filenames in os.walk(os.getcwd()):
-                # Prune the folder in-place to prevent
+                # Prune the folders in-place to prevent
                 # scanning excluded folders
                 for name in list(dirnames):
-                    pattern = _resolve_pattern(os.path.join(abs_root, name))
-                    if self._is_excluded(pattern):
+                    path = os.path.join(abs_root, name)
+                    if self._is_excluded(_resolve_pattern(path)):
+                        dirnames.remove(name)
+                        continue
+                    # Multi-language setup from #2346 separates the
+                    # language config, so each mkdocs.yml file is
+                    # unaware of other site_dir directories. Therefore,
+                    # we add this with the assumption a site_dir contains
+                    # both of these files.
+                    sitemap = os.path.join(path, "sitemap.xml")
+                    sitemap_gz = os.path.join(path, "sitemap.xml.gz")
+                    if os.path.exists(sitemap) and os.path.exists(sitemap_gz):
+                        log.debug(f"Excluded site_dir: {path}")
                         dirnames.remove(name)
                 for name in filenames:
                     path = os.path.join(abs_root, name)
-                    pattern = _resolve_pattern(path)
-                    if self._is_excluded(pattern):
+                    if self._is_excluded(_resolve_pattern(path)):
                         continue
                     path = os.path.relpath(path, os.path.curdir)
                     f.write(path, os.path.join(example, path))
