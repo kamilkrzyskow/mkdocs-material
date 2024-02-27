@@ -220,8 +220,13 @@ class InfoPlugin(BasePlugin[InfoConfig]):
                 json.dumps(
                     {
                         "system": platform.platform(),
+                        "architecture": platform.architecture(),
                         "python": platform.python_version(),
-                        "command": " ".join(sys.argv[1:])
+                        "command": " ".join([
+                            sys.argv[0].rsplit(os.sep, 1)[-1],
+                            *sys.argv[1:]
+                        ]),
+                        "sys.path": sys.path
                     },
                     default = str,
                     indent = 2
