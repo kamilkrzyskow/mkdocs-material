@@ -71,9 +71,9 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install mkdocs-material
-          pip show mkdocs-material ; echo "1---1" ; pip --version ; echo "---" ; python -c "import pprint, pathlib, material; p = pathlib.Path(material.__file__); print(p); print('---') ; pprint.pprint(list(p.parent.glob('**/*')))"
+          pip show mkdocs-material ; echo "1---1" ; pip --version ; echo "---" ; python -c "import sys, pprint, pathlib, material; p = pathlib.Path(material.__file__); print(p); print('extensions exist?', (p.parent / 'extensions').exists()); pprint.pprint(sys.path)" ; echo "---" ; echo "pwd = $(pwd)"
           pip install .[recommended,git,imaging]
-          pip show mkdocs-material ; echo "2---2" ; pip --version ; echo "---" ; python -c "import pprint, pathlib, material; p = pathlib.Path(material.__file__); print(p); print('---') ; pprint.pprint(list(p.parent.glob('**/*')))"
+          pip show mkdocs-material ; echo "2---2" ; pip --version ; echo "---" ; python -c "import sys, pprint, pathlib, material; p = pathlib.Path(material.__file__); print(p); print('extensions exist?', (p.parent / 'extensions').exists()); pprint.pprint(sys.path)" ; echo "---" ; echo "pwd = $(pwd)"
 
       - name: Install Insiders build
         if: github.event.repository.fork == false
